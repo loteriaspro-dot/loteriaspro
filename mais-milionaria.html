@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>+Milionária — LoteriasPro</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-lottery="mais-milionaria">
+
+
+
+<header class="site-header">
+  <a href="index.html" class="brand" aria-label="LoteriasPro">
+    <img class="brand-logo-img" src="assets/logo-loteriaspro.png" alt="LoteriasPro">
+  </a>
+  <button class="menu-btn" onclick="toggleMenu()" aria-label="Abrir menu">☰</button>
+  <nav id="mainMenu" class="main-menu">
+    <a class="home-pill" href="index.html">🏠 Home</a>
+    <a class="lottery-link" style="--c:#8b3fb1" href="lotofacil.html">Lotofácil</a>
+    <a class="lottery-link" style="--c:#159447" href="mega-sena.html">Mega-Sena</a>
+    <a class="lottery-link" style="--c:#3f4bb1" href="quina.html">Quina</a>
+    <a class="lottery-link" style="--c:#e8743b" href="lotomania.html">Lotomania</a>
+    <a class="lottery-link" style="--c:#a83d5c" href="dupla-sena.html">Dupla Sena</a>
+    <a class="lottery-link" style="--c:#d7a83f" href="dia-de-sorte.html">Dia de Sorte</a>
+    <a class="lottery-link" style="--c:#00a859" href="timemania.html">Timemania</a>
+    <a class="lottery-link" style="--c:#95c93d" href="super-sete.html">Super Sete</a>
+    <a class="lottery-link" style="--c:#7651c7" href="mais-milionaria.html">+Milionária</a>
+  </nav>
+  <div class="account-area">
+    <button class="login-btn" type="button">Login</button>
+  </div>
+</header>
+
+
+
+<main>
+  <section class="lottery-hero" style="--c:#7651c7; --soft:#f0eaff">
+    <div>
+      <span class="eyebrow">+Milionária</span>
+      <h1>Painel da +Milionária</h1>
+      <p>Resultados, estatísticas, tabelas e ferramentas de combinações com filtros.</p>
+    </div>
+    <div class="hero-chip">Concurso 351</div>
+  </section>
+
+  <nav class="subnav">
+    <a href="#resultado">Resultado</a>
+    <a href="#estatisticas">Estatísticas</a>
+    <a href="#premium">Ferramentas</a>
+  </nav>
+
+  <section id="resultado" class="panel result-panel" style="--c:#7651c7; --soft:#f0eaff">
+    <div>
+      <h2>Resultado do concurso 351</h2>
+      <p class="muted">Sorteio de 02/05/2026 • Próximo em 06/05/2026</p>
+      <div class="balls big"><span>06</span><span>12</span><span>18</span><span>24</span><span>33</span><span>47</span></div>
+    </div>
+    <div class="award-card">
+      <h3>Informações</h3>
+      <div class="mini-stat"><span>Status</span><b>ACUMULOU</b></div>
+      <div class="mini-stat"><span>Estimativa</span><b>R$ 39.500.000,00</b></div>
+      <div class="mini-stat"><span>Qtd. dezenas</span><b>6</b></div>
+    </div>
+  </section>
+
+  <section id="estatisticas" class="section-head">
+    <h2>Estatísticas rápidas</h2>
+    <p>Indicadores iniciais calculados com base no último concurso. Depois conectaremos ao histórico completo.</p>
+  </section>
+  <section class="stats-grid" style="--c:#7651c7">
+    <div class="stat-box"><span>Pares</span><b id="statEven">-</b></div>
+    <div class="stat-box"><span>Ímpares</span><b id="statOdd">-</b></div>
+    <div class="stat-box"><span>Primos</span><b id="statPrime">-</b></div>
+    <div class="stat-box"><span>Fibonacci</span><b id="statFib">-</b></div>
+    <div class="stat-box"><span>Soma</span><b id="statSum">-</b></div>
+    <div class="stat-box"><span>Múltiplos de 3</span><b id="statAvg">-</b></div>
+  </section>
+
+  <section id="simulador" class="tool-layout" style="--c:#7651c7; --soft:#f0eaff">
+    <div class="panel">
+      <h2>Simulador de Combinações</h2>
+      <p class="muted">Fixe ou remova dezenas e aplique filtros matemáticos. O objetivo é estudo estatístico, sem promessa de resultado.</p>
+      <div class="selector-wrap">
+        <div>
+          <h3>Remover dezenas</h3>
+          <div id="removeGrid" class="number-grid"></div>
+        </div>
+        <div>
+          <h3>Fixar dezenas</h3>
+          <div id="fixGrid" class="number-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="filters">
+      <h3>Filtros</h3>
+      <label>Pares<select id="filterEven"><option value="any">Qualquer</option></select></label>
+      <label>Ímpares<select id="filterOdd"><option value="any">Qualquer</option></select></label>
+      <label>Primos<select id="filterPrime"><option value="any">Qualquer</option></select></label>
+      <label>Fibonacci<select id="filterFib"><option value="any">Qualquer</option></select></label>
+      <label>Máx. repetidos do último<select id="filterRepeat"><option value="any">Qualquer</option></select></label>
+      <label>Soma mínima<input id="sumMin" type="number" placeholder="Ex: 170"></label>
+      <label>Soma máxima<input id="sumMax" type="number" placeholder="Ex: 220"></label>
+      <label>Qtd. combinações<input id="qty" type="number" value="8" min="1" max="30"></label>
+      <button class="primary full" onclick="processCombinations()">Processar combinações</button>
+    </aside>
+  </section>
+
+  <section class="panel combo-results" style="--c:#7651c7">
+    <div class="result-title">
+      <h2>Resultado do processamento</h2>
+      <span id="attempts">Aguardando filtros</span>
+    </div>
+    <div id="comboResults" class="combo-list">Configure os filtros e clique em processar.</div>
+  </section>
+
+  <section id="premium" class="premium-banner">
+    <h2>Ferramentas de estudo</h2>
+    <p>Monte jogos, calcule probabilidades e use ferramentas de análise.</p>
+    
+  </section>
+</main>
+<footer>© 2026 LoteriasPro — Plataforma independente, sem vínculo com a Caixa Econômica Federal.</footer>
+<script src="data.js"></script>
+<script src="api.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
