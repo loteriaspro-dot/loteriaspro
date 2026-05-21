@@ -1,0 +1,31 @@
+name: Atualizar histórico das loterias
+
+on:
+  schedule:
+    # Roda todos os dias às 23:40 UTC, depois dos sorteios da noite no Brasil.
+    - cron: '40 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-historico:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Atualizar arquivos JSON
+        run: node scripts/update-historico.mjs
+
+      - name: Salvar alterações no repositório
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'Atualiza histórico das loterias'
+          file_pattern: historico/*.json
