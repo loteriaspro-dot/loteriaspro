@@ -39,3 +39,28 @@ jobs:
       - name: Sinalizar falha de modalidade no GitHub Actions
         if: steps.atualizar.outcome == 'failure'
         run: exit 1
+
+      - name: Monitorar resultados e atraso na Hostinger
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFile,readdir} from 'node:fs/promises';
+          const url = 'https://deepskyblue-owl-357956.hostingersite.com/resultados-caixa.json';
+          const response = await fetch(url, {cache:'no-store',signal:AbortSignal.timeout(15000)});
+          if(!response.ok) throw new Error(`JSON da Hostinger: HTTP ${response.status}`);
+          const snapshot = await response.json();
+          const today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+          for(const file of (await readdir('historico')).filter(name=>name.endsWith('.json'))){
+            const slug = file.slice(0,-5);
+            const history = JSON.parse(await readFile(`historico/${file}`,'utf8'));
+            const record = snapshot[slug];
+            const next = record?.resultado?.dataProximoConcurso?.split('/').reverse().join('-');
+            const age = Date.now()/1000 - (record?.verificadoEm || 0);
+            const lagging = !record?.resultado || record.status !== 'ok' ||
+              record.resultado.numero < history.ultimoConcurso || age > (next > today ? 2400 : 420);
+            if(lagging){
+              console.error(`::error title=Atualização atrasada (${slug})::Verifique a coleta na Hostinger e as origens da CAIXA.`);
+              process.exitCode = 1;
+            }
+          }
+          NODE
