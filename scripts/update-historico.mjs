@@ -207,6 +207,7 @@ const entries = only.length
   : Object.entries(LOTERIAS);
 
 let successful = 0;
+let snapshotChanged = false;
 let snapshot = {};
 try {
   snapshot = JSON.parse(await fs.readFile(SNAPSHOT_FILE, 'utf8'));
@@ -215,15 +216,23 @@ try {
 }
 for(const [slug, endpoint] of entries){
   try{
+    const cached = snapshot[slug];
+    const next = cached?.resultado?.dataProximoConcurso?.split('/').reverse().join('-');
+    if(process.env.GITHUB_EVENT_NAME === 'schedule' && cached?.status === 'ok' &&
+        next > today && Date.now()/1000 - cached.verificadoEm < 24*60){
+      successful++;
+      continue;
+    }
     const result = await updateLottery(slug, endpoint);
     snapshot[slug] = {resultado: result, verificadoEm: Math.floor(Date.now()/1000),
       status: result.dataProximoConcurso?.split('/').reverse().join('-') < today ? 'atrasado' : 'ok'};
+    snapshotChanged = true;
     successful++;
   }catch(error){
     console.warn(`::warning title=Histórico preservado (${slug})::${error.message}`);
   }
 }
-if(successful){
+if(snapshotChanged){
   const temp = `${SNAPSHOT_FILE}.${process.pid}.tmp`;
   try{
     await fs.writeFile(temp, JSON.stringify(snapshot), 'utf8');
