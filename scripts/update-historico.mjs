@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const API_BASE = 'https://servicebus2.caixa.gov.br/portaldeloterias/api';
+// Origem configurada no params.txt do Portal Loterias CAIXA.
+const PORTAL_API = 'https://servicebus3.caixa.gov.br/portaldeloterias/api';
 const LOTERIAS = {
   'lotofacil': 'lotofacil',
   'mega-sena': 'megasena',
@@ -45,9 +47,11 @@ async function readExisting(slug){
   try{
     const txt = await fs.readFile(file, 'utf8');
     const json = JSON.parse(txt);
-    const concursos = Array.isArray(json) ? json : (json.concursos || []);
+    const concursos = Array.isArray(json) ? json : json?.concursos;
+    if(!Array.isArray(concursos)) throw new Error('Formato do histórico existente inválido');
     return { file, concursos };
-  }catch{
+  }catch(error){
+    if(error.code !== 'ENOENT') throw error;
     return { file, concursos: [] };
   }
 }
@@ -56,11 +60,39 @@ function contestNumber(item){
   return Number(item?.numero || item?.numeroConcurso || item?.concurso || 0);
 }
 
+function validContest(endpoint, row, expected){
+  const number = contestNumber(row);
+  if(!Number.isSafeInteger(number) || number < 1 || (expected && number !== expected)) return false;
+  if(endpoint !== 'supersete') return true;
+  const date = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(row.dataApuracao);
+  if(!date) return false;
+  const [,day,month,year] = date;
+  const drawn = new Date(`${year}-${month}-${day}T00:00:00-03:00`);
+  return Number.isFinite(+drawn) && +drawn <= Date.now()
+    && drawn.toISOString().slice(0,10) === `${year}-${month}-${day}`
+    && Array.isArray(row.listaDezenas) && row.listaDezenas.length === 7
+    && row.listaDezenas.every(digit => /^[0-9]$/.test(String(digit)));
+}
+
+async function fetchOfficial(endpoint, n){
+  const origins = endpoint === 'supersete' ? [PORTAL_API, API_BASE] : [API_BASE, PORTAL_API];
+  const failures = [];
+  for(const base of origins){
+    const url = `${base}/${endpoint}/${n ?? ''}`;
+    try{
+      const result = await fetchJson(url);
+      if(!validContest(endpoint,result,n)) throw new Error('Resultado inválido ou concurso divergente');
+      return result;
+    }catch(error){
+      failures.push(`${url}: ${error.message}`);
+    }
+  }
+  throw new Error(failures.join(' | '));
+}
+
 async function fetchContest(endpoint, n){
-  const url = `${API_BASE}/${endpoint}/${n}`;
   try{
-    const data = await fetchJson(url);
-    return contestNumber(data) ? data : null;
+    return await fetchOfficial(endpoint, n);
   }catch(err){
     console.warn(`⚠️ Falha no concurso ${endpoint}/${n}: ${err.message}`);
     return null;
@@ -83,20 +115,22 @@ async function updateLottery(slug, endpoint){
   console.log(`\n🎯 Atualizando ${slug}...`);
   await fs.mkdir(OUT_DIR, { recursive: true });
 
-  const latest = await fetchJson(`${API_BASE}/${endpoint}/`);
+  const { file, concursos } = await readExisting(slug);
+  const latest = await fetchOfficial(endpoint);
   const latestNumber = contestNumber(latest);
   if(!latestNumber) throw new Error(`Não consegui detectar o último concurso de ${slug}`);
 
-  const { file, concursos } = await readExisting(slug);
   const map = new Map();
   for(const c of concursos){
     const n = contestNumber(c);
     if(n) map.set(n, c);
   }
+  const previousLatest = Math.max(0, ...map.keys());
+  if(latestNumber < previousLatest) throw new Error(`Fonte atrasada: ${latestNumber} < ${previousLatest}`);
 
   const missing = [];
   for(let n = 1; n <= latestNumber; n++){
-    if(!map.has(n)) missing.push(n);
+    if(n !== latestNumber && !map.has(n)) missing.push(n);
   }
 
   console.log(`   Último concurso: ${latestNumber}`);
@@ -115,6 +149,14 @@ async function updateLottery(slug, endpoint){
   map.set(latestNumber, latest);
 
   const ordered = [...map.values()].sort((a,b)=>contestNumber(a)-contestNumber(b));
+  if(endpoint === 'supersete' && (ordered.length !== latestNumber ||
+    !ordered.every((row,index)=>validContest(endpoint,row,index+1)))){
+    throw new Error('Histórico da Super Sete incompleto ou inválido');
+  }
+  if(JSON.stringify(ordered) === JSON.stringify(concursos)){
+    console.log(`↔️ ${slug}: histórico já confirmado até o concurso ${latestNumber}`);
+    return;
+  }
   const output = {
     slug,
     endpoint,
@@ -123,7 +165,13 @@ async function updateLottery(slug, endpoint){
     totalConcursos: ordered.length,
     concursos: ordered
   };
-  await fs.writeFile(file, JSON.stringify(output), 'utf8');
+  const temp = `${file}.${process.pid}.tmp`;
+  try{
+    await fs.writeFile(temp, JSON.stringify(output), 'utf8');
+    await fs.rename(temp,file);
+  }finally{
+    await fs.rm(temp,{force:true});
+  }
   console.log(`✅ ${slug}: ${ordered.length} concursos salvos em ${path.relative(ROOT, file)}`);
 }
 
@@ -132,8 +180,15 @@ const entries = only.length
   ? Object.entries(LOTERIAS).filter(([slug]) => only.includes(slug))
   : Object.entries(LOTERIAS);
 
+let successful = 0;
 for(const [slug, endpoint] of entries){
-  await updateLottery(slug, endpoint);
+  try{
+    await updateLottery(slug, endpoint);
+    successful++;
+  }catch(error){
+    console.warn(`::warning title=Histórico preservado (${slug})::${error.message}`);
+  }
 }
 
-console.log('\n✅ Histórico atualizado.');
+console.log(`\n${successful}/${entries.length} modalidades verificadas. As demais mantiveram os arquivos anteriores.`);
+if(!successful) process.exitCode = 1;
