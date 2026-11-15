@@ -2,16 +2,20 @@ name: Atualizar histórico das loterias
 
 on:
   schedule:
-    # Roda todos os dias às 23:40 UTC, depois dos sorteios da noite no Brasil.
-    - cron: '40 23 * * *'
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: historico-loterias
+  cancel-in-progress: false
+
 jobs:
   update-historico:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v4
@@ -22,6 +26,8 @@ jobs:
           node-version: '20'
 
       - name: Atualizar arquivos JSON
+        id: atualizar
+        continue-on-error: true
         run: node scripts/update-historico.mjs
 
       - name: Salvar alterações no repositório
@@ -29,3 +35,7 @@ jobs:
         with:
           commit_message: 'Atualiza histórico das loterias'
           file_pattern: historico/*.json
+
+      - name: Sinalizar falha de modalidade no GitHub Actions
+        if: steps.atualizar.outcome == 'failure'
+        run: exit 1
