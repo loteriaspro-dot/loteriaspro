@@ -24,6 +24,7 @@ const today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year
 
 const ROOT = process.cwd();
 const OUT_DIR = path.join(ROOT, 'historico');
+const SNAPSHOT_FILE = path.join(ROOT, 'resultados-caixa.json');
 const CONCURRENCY = Number(process.env.HISTORICO_CONCURRENCY || 8);
 const DELAY_MS = Number(process.env.HISTORICO_DELAY_MS || 80);
 
@@ -179,7 +180,7 @@ async function updateLottery(slug, endpoint){
   }
   if(JSON.stringify(ordered) === JSON.stringify(concursos)){
     console.log(`↔️ ${slug}: histórico já confirmado até o concurso ${latestNumber}`);
-    return;
+    return latest;
   }
   const output = {
     slug,
@@ -197,6 +198,7 @@ async function updateLottery(slug, endpoint){
     await fs.rm(temp,{force:true});
   }
   console.log(`✅ ${slug}: ${ordered.length} concursos salvos em ${path.relative(ROOT, file)}`);
+  return latest;
 }
 
 const only = process.argv.slice(2);
@@ -205,12 +207,29 @@ const entries = only.length
   : Object.entries(LOTERIAS);
 
 let successful = 0;
+let snapshot = {};
+try {
+  snapshot = JSON.parse(await fs.readFile(SNAPSHOT_FILE, 'utf8'));
+} catch (error) {
+  if(error.code !== 'ENOENT') throw error;
+}
 for(const [slug, endpoint] of entries){
   try{
-    await updateLottery(slug, endpoint);
+    const result = await updateLottery(slug, endpoint);
+    snapshot[slug] = {resultado: result, verificadoEm: Math.floor(Date.now()/1000),
+      status: result.dataProximoConcurso?.split('/').reverse().join('-') < today ? 'atrasado' : 'ok'};
     successful++;
   }catch(error){
     console.warn(`::warning title=Histórico preservado (${slug})::${error.message}`);
+  }
+}
+if(successful){
+  const temp = `${SNAPSHOT_FILE}.${process.pid}.tmp`;
+  try{
+    await fs.writeFile(temp, JSON.stringify(snapshot), 'utf8');
+    await fs.rename(temp, SNAPSHOT_FILE);
+  }finally{
+    await fs.rm(temp,{force:true});
   }
 }
 
