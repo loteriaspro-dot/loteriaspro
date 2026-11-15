@@ -52,7 +52,9 @@ jobs:
               const response = await fetch(url,{cache:'no-store',signal:AbortSignal.timeout(10000)});
               if(response.ok) snapshot = await response.json();
               const expected = JSON.parse(await readFile('resultados-caixa.json','utf8'));
-              if(Object.entries(expected).every(([slug,{resultado}])=>snapshot[slug]?.resultado?.numero >= resultado.numero)) break;
+              if(Object.entries(expected).every(([slug,{resultado,verificadoEm}])=>
+                snapshot[slug]?.resultado?.numero >= resultado.numero &&
+                snapshot[slug]?.verificadoEm >= verificadoEm)) break;
             }catch(error){ console.warn(error.message); }
             if(attempt<5) await new Promise(resolve=>setTimeout(resolve,30000));
           }
@@ -67,6 +69,13 @@ jobs:
               record.resultado.numero < history.ultimoConcurso || age > (record.fonte === 'github' || next > today ? 2400 : 420);
             if(lagging){
               console.error(`::error title=Atualização atrasada (${slug})::Verifique a coleta na Hostinger e as origens da CAIXA.`);
+              process.exitCode = 1;
+            }
+          }
+          const expected = JSON.parse(await readFile('resultados-caixa.json','utf8'));
+          for(const [slug,{verificadoEm}] of Object.entries(expected)){
+            if((snapshot[slug]?.verificadoEm ?? 0) < verificadoEm){
+              console.error(`::error title=Espelho desatualizado (${slug})::A Hostinger ainda não recebeu esta verificação.`);
               process.exitCode = 1;
             }
           }
