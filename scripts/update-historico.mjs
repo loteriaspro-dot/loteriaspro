@@ -15,6 +15,12 @@ const LOTERIAS = {
   'super-sete': 'supersete',
   'mais-milionaria': 'maismilionaria'
 };
+const RULES = {
+  lotofacil:[15,1,25], megasena:[6,1,60], quina:[5,1,80], lotomania:[20,0,99],
+  duplasena:[6,1,50], diadesorte:[7,1,31], timemania:[7,1,80],
+  supersete:[7,0,9], maismilionaria:[6,1,50]
+};
+const today = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 
 const ROOT = process.cwd();
 const OUT_DIR = path.join(ROOT, 'historico');
@@ -23,20 +29,20 @@ const DELAY_MS = Number(process.env.HISTORICO_DELAY_MS || 80);
 
 function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function fetchJson(url, attempts = 4){
+async function fetchJson(url, attempts = 2){
   let lastError;
   for(let i = 0; i < attempts; i++){
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), 7000);
     try{
       const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     }catch(err){
-      clearTimeout(timeout);
       lastError = err;
-      await sleep(500 * (i + 1));
+      if(i + 1 < attempts) await sleep(400);
+    }finally{
+      clearTimeout(timeout);
     }
   }
   throw lastError;
@@ -63,31 +69,41 @@ function contestNumber(item){
 function validContest(endpoint, row, expected){
   const number = contestNumber(row);
   if(!Number.isSafeInteger(number) || number < 1 || (expected && number !== expected)) return false;
-  if(endpoint !== 'supersete') return true;
+  const [size,min,max] = RULES[endpoint];
   const date = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(row.dataApuracao);
   if(!date) return false;
   const [,day,month,year] = date;
   const drawn = new Date(`${year}-${month}-${day}T00:00:00-03:00`);
   return Number.isFinite(+drawn) && +drawn <= Date.now()
     && drawn.toISOString().slice(0,10) === `${year}-${month}-${day}`
-    && Array.isArray(row.listaDezenas) && row.listaDezenas.length === 7
-    && row.listaDezenas.every(digit => /^[0-9]$/.test(String(digit)));
+    && Array.isArray(row.listaDezenas) && row.listaDezenas.length === size
+    && row.listaDezenas.every(digit => /^\d{1,2}$/.test(String(digit)) && Number(digit) >= min && Number(digit) <= max)
+    && (endpoint === 'supersete' || new Set(row.listaDezenas.map(Number)).size === size);
 }
 
 async function fetchOfficial(endpoint, n){
-  const origins = endpoint === 'supersete' ? [PORTAL_API, API_BASE] : [API_BASE, PORTAL_API];
+  const origins = [PORTAL_API, API_BASE];
   const failures = [];
+  let best;
   for(const base of origins){
     const url = `${base}/${endpoint}/${n ?? ''}`;
     try{
       const result = await fetchJson(url);
       if(!validContest(endpoint,result,n)) throw new Error('Resultado inválido ou concurso divergente');
-      return result;
+      if(n) return result;
+      if(!result.listaRateioPremio?.length) throw new Error('Rateio ainda indisponível');
+      if(!best || contestNumber(result) > contestNumber(best)) best = result;
     }catch(error){
       failures.push(`${url}: ${error.message}`);
     }
   }
-  throw new Error(failures.join(' | '));
+  if(!best) throw new Error(failures.join(' | '));
+  const next = Number(best.numeroConcursoProximo);
+  if(next > contestNumber(best) && best.dataProximoConcurso?.split('/').reverse().join('-') <= today){
+    const candidate = await fetchOfficial(endpoint,next).catch(()=>null);
+    if(candidate?.listaRateioPremio?.length) best = candidate;
+  }
+  return best;
 }
 
 async function fetchContest(endpoint, n){
@@ -127,6 +143,9 @@ async function updateLottery(slug, endpoint){
   }
   const previousLatest = Math.max(0, ...map.keys());
   if(latestNumber < previousLatest) throw new Error(`Fonte atrasada: ${latestNumber} < ${previousLatest}`);
+  if(latest.dataProximoConcurso?.split('/').reverse().join('-') < today){
+    console.warn(`::warning title=Resultado pendente (${slug})::Próximo sorteio informado: ${latest.dataProximoConcurso}`);
+  }
 
   const missing = [];
   for(let n = 1; n <= latestNumber; n++){
@@ -146,7 +165,12 @@ async function updateLottery(slug, endpoint){
   }
 
   // Garante que o último resultado sempre esteja atualizado, mesmo se já existia no arquivo.
-  map.set(latestNumber, latest);
+  const existing = map.get(latestNumber);
+  if(existing && (existing.dataApuracao !== latest.dataApuracao ||
+    JSON.stringify(existing.listaDezenas?.map(Number)) !== JSON.stringify(latest.listaDezenas.map(Number)))){
+    throw new Error(`Resultado divergente do histórico salvo para ${latestNumber}`);
+  }
+  map.set(latestNumber, {...existing, ...latest});
 
   const ordered = [...map.values()].sort((a,b)=>contestNumber(a)-contestNumber(b));
   if(endpoint === 'supersete' && (ordered.length !== latestNumber ||
@@ -191,4 +215,4 @@ for(const [slug, endpoint] of entries){
 }
 
 console.log(`\n${successful}/${entries.length} modalidades verificadas. As demais mantiveram os arquivos anteriores.`);
-if(!successful) process.exitCode = 1;
+if(successful !== entries.length) process.exitCode = 1;
